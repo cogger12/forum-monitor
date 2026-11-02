@@ -1,0 +1,23 @@
+[Unit]
+Description=NES .45 handgun classifieds monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nes45
+Group=nes45
+WorkingDirectory=/opt/nes-45-monitor
+ExecStart=/usr/bin/python3 -m nes_monitor --config /opt/nes-45-monitor/config.ini
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/nes-45-monitor.env
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nes-45-monitor
+
+[Install]
+WantedBy=multi-user.target
