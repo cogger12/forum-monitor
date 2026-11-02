@@ -16,6 +16,7 @@ class Config:
     max_pages: int
     state_db: Path
     ntfy_url: str
+    ntfy_token: str
     webhook_url: str
     webhook_format: str
     smtp_host: str
@@ -60,6 +61,7 @@ def load_config(path: str | Path) -> Config:
         max_pages=pages,
         state_db=Path(forum.get("state_db", "data/state.sqlite")).expanduser(),
         ntfy_url=_env("NES_NTFY_URL", notify.get("ntfy_url", "")),
+        ntfy_token=_env("NES_NTFY_TOKEN", notify.get("ntfy_token", "")),
         webhook_url=_env("NES_WEBHOOK_URL", notify.get("webhook_url", "")),
         webhook_format=webhook_format,
         smtp_host=_env("NES_SMTP_HOST", notify.get("smtp_host", "")),

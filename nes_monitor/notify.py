@@ -37,7 +37,7 @@ def send(config: Config, item: Seen) -> bool:
     subject = f"NES .45: {item.title}"
     ok = True
     if config.ntfy_url:
-        ok = _ntfy(config.ntfy_url, subject, message, item.url) and ok
+        ok = _ntfy(config.ntfy_url, config.ntfy_token, subject, message, item.url) and ok
     if config.webhook_url:
         ok = _webhook(config.webhook_url, config.webhook_format, subject, message) and ok
     if config.smtp_host and config.smtp_to:
@@ -48,16 +48,19 @@ def send(config: Config, item: Seen) -> bool:
     return ok
 
 
-def _ntfy(url: str, title: str, message: str, link: str) -> bool:
+def _ntfy(url: str, token: str, title: str, message: str, link: str) -> bool:
     endpoint = url if url.startswith("http") else f"https://ntfy.sh/{url}"
+    headers = {
+        "Title": title,
+        "Click": link,
+        "Content-Type": "text/plain; charset=utf-8",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
         endpoint,
         data=message.encode("utf-8"),
-        headers={
-            "Title": title,
-            "Click": link,
-            "Content-Type": "text/plain; charset=utf-8",
-        },
+        headers=headers,
         method="POST",
     )
     return _post(request, "ntfy")

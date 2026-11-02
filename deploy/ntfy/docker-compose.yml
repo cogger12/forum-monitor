@@ -1,0 +1,25 @@
+# ntfy on the home Docker host. The VPS and the phone use NTFY_BASE_URL.
+# Set that to the URL they can both open, with no trailing slash.
+services:
+  ntfy:
+    image: binwiederhier/ntfy
+    restart: unless-stopped
+    command: serve
+    environment:
+      TZ: America/New_York
+      NTFY_BASE_URL: ${NTFY_BASE_URL:?set NTFY_BASE_URL}
+      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_BEHIND_PROXY: ${NTFY_BEHIND_PROXY:-false}
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
+      NTFY_ENABLE_LOGIN: "true"
+    volumes:
+      - ntfy-data:/var/lib/ntfy
+    ports:
+      - "8080:80"
+
+volumes:
+  ntfy-data:

@@ -33,7 +33,9 @@ Set any of these. If none are set, alerts are written to the log only.
 - A Discord webhook, Slack webhook, or generic JSON POST
 - Email over SMTP
 
-Environment variables override the config file: `NES_NTFY_URL`, `NES_WEBHOOK_URL`, `NES_WEBHOOK_FORMAT`, `NES_SMTP_HOST`, `NES_SMTP_PORT`, `NES_SMTP_USER`, `NES_SMTP_PASSWORD`, `NES_SMTP_FROM`, `NES_SMTP_TO`.
+Environment variables override the config file: `NES_NTFY_URL`, `NES_NTFY_TOKEN`, `NES_WEBHOOK_URL`, `NES_WEBHOOK_FORMAT`, `NES_SMTP_HOST`, `NES_SMTP_PORT`, `NES_SMTP_USER`, `NES_SMTP_PASSWORD`, `NES_SMTP_FROM`, `NES_SMTP_TO`.
+
+`NES_NTFY_URL` is the full topic URL, including a self-hosted server such as `https://ntfy.example.com/forum-monitor-some-long-secret`. `NES_NTFY_TOKEN` is the bearer token when that server denies anonymous publish. The VPS and the phone both have to be able to reach that server. A container on a home LAN is not reachable from the VPS until the host is on a shared VPN or published through HTTPS.
 
 ## Run it on the VPS
 
