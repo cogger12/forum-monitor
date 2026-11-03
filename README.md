@@ -1,8 +1,8 @@
 # NES .45 handgun monitor
 
-Watches the public [WTS/WTT Handguns](https://www.northeastshooters.com/xen/forums/wts-wtt-handguns.213/) forum on Northeast Shooters and alerts you when a new listing is a pistol chambered in .45.
+Watches the public [WTS/WTT Handguns](https://www.northeastshooters.com/xen/forums/wts-wtt-handguns.213/) forum on Northeast Shooters and alerts you when a pistol chambered in .45 is newly listed or an older .45 listing is bumped.
 
-It reads the newest threads (not bumped old ones), checks the title and the first post, and remembers thread ids in a local database so each listing alerts once. The first run records what is already on the forum and does not alert. Only threads that show up after that are sent.
+It checks the title and the first post, and remembers each thread's last activity. A listing alerts once when it is new, then again each time that thread's latest post time moves. The first run records what is already on the forum and does not alert. On an install that is already running, .45 threads on the recent-activity page that were never recorded are sent once, and after that only a newer bump is sent.
 
 Checks stay at least 5 minutes apart. The default is 15 minutes. Nothing is posted to the forum.
 

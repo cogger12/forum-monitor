@@ -18,6 +18,7 @@ class Seen:
     reason: str
     matched: bool
     notified: bool
+    last_activity: str = ""
 
 
 class Store:
@@ -42,14 +43,24 @@ class Store:
             )
             """
         )
+        self._migrate()
         self._db.commit()
 
     def close(self) -> None:
         self._db.close()
 
+    def _migrate(self) -> None:
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(threads)")}
+        if "last_activity" not in columns:
+            self._db.execute("ALTER TABLE threads ADD COLUMN last_activity TEXT")
+
     def known_ids(self) -> set[int]:
         rows = self._db.execute("SELECT id FROM threads").fetchall()
         return {row["id"] for row in rows}
+
+    def get(self, thread_id: int) -> Seen | None:
+        row = self._db.execute("SELECT * FROM threads WHERE id = ?", (thread_id,)).fetchone()
+        return _seen(row) if row else None
 
     def pending(self) -> list[Seen]:
         rows = self._db.execute(
@@ -62,8 +73,8 @@ class Store:
             """
             INSERT INTO threads (
                 id, title, url, prefix, author, posted_at, snippet, reason,
-                matched, notified, first_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                matched, notified, first_seen, last_activity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 url = excluded.url,
@@ -73,7 +84,8 @@ class Store:
                 snippet = excluded.snippet,
                 reason = excluded.reason,
                 matched = excluded.matched,
-                notified = excluded.notified
+                notified = excluded.notified,
+                last_activity = excluded.last_activity
             """,
             (
                 item.thread_id,
@@ -87,6 +99,7 @@ class Store:
                 int(item.matched),
                 int(item.notified),
                 _now(),
+                item.last_activity,
             ),
         )
         self._db.commit()
@@ -108,6 +121,7 @@ def _seen(row: sqlite3.Row) -> Seen:
         reason=row["reason"] or "",
         matched=bool(row["matched"]),
         notified=bool(row["notified"]),
+        last_activity=row["last_activity"] or "",
     )
 
 

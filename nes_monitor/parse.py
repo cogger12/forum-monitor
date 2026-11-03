@@ -5,6 +5,8 @@ import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 
 THREAD_SPLIT = "js-threadListItem-"
@@ -20,16 +22,29 @@ class Listing:
     prefix: str
     author: str
     posted_at: str
+    bumped_at: str
+
+
+def activity_url(forum_url: str, page: int) -> str:
+    """Forum page ordered by latest reply, which is where a bump shows up."""
+    return _forum_page(forum_url, page, order=None)
 
 
 def page_url(forum_url: str, page: int) -> str:
+    return _forum_page(forum_url, page, order="post_date")
+
+
+def _forum_page(forum_url: str, page: int, order: str | None) -> str:
     parts = urllib.parse.urlsplit(forum_url)
     path = parts.path.rstrip("/")
     if page > 1:
         path = f"{path}/page-{page}"
     query = urllib.parse.parse_qs(parts.query)
-    query["order"] = ["post_date"]
-    query["direction"] = ["desc"]
+    query.pop("order", None)
+    query.pop("direction", None)
+    if order:
+        query["order"] = [order]
+        query["direction"] = ["desc"]
     encoded = urllib.parse.urlencode({key: values[0] for key, values in query.items()})
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path + "/", encoded, ""))
 
@@ -65,7 +80,7 @@ def parse_listings(page_html: str, forum_url: str) -> list[Listing]:
         label = re.search(r'class="label [^"]*"[^>]*>\s*([^<]+?)\s*<', title_html)
         title = _anchor_text(title_html)
         author = re.search(r'class="username [^"]*"[^>]*>\s*([^<]+?)\s*<', chunk)
-        posted = re.search(r'<time[^>]*datetime="([^"]+)"', chunk)
+        posted_at, bumped_at = _times(chunk)
         href = html.unescape(link.group(1))
         listings.append(
             Listing(
@@ -75,7 +90,8 @@ def parse_listings(page_html: str, forum_url: str) -> list[Listing]:
                 preview_url=absolute(forum_url, html.unescape(preview.group(1))),
                 prefix=_clean(label.group(1)) if label else "",
                 author=_clean(author.group(1)) if author else "",
-                posted_at=posted.group(1) if posted else "",
+                posted_at=posted_at,
+                bumped_at=bumped_at,
             )
         )
     return listings
@@ -126,6 +142,46 @@ def html_to_text(fragment: str) -> str:
     text = re.sub(r"\n\s*", "\n", text)
     text = re.sub(r"\n{2,}", "\n", text)
     return text.strip()
+
+
+def is_newer(left: str, right: str) -> bool:
+    later = parse_time(left)
+    earlier = parse_time(right)
+    if later is None or earlier is None:
+        return False
+    return later > earlier
+
+
+def parse_time(value: str) -> datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    if "T" in text and re.search(r"[+-]\d{4}$", text):
+        text = text[:-2] + ":" + text[-2:]
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(text)
+        except (TypeError, ValueError, IndexError, OverflowError):
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _times(chunk: str) -> tuple[str, str]:
+    posted_at = ""
+    bumped_at = ""
+    for attrs in re.findall(r"<time\b([^>]*)>", chunk, re.I):
+        found = re.search(r'datetime="([^"]+)"', attrs)
+        if not found:
+            continue
+        if "structItem-latestDate" in attrs:
+            bumped_at = found.group(1)
+        elif not posted_at:
+            posted_at = found.group(1)
+    return posted_at, bumped_at or posted_at
 
 
 def _thread_id(guid: str, link: str) -> int | None:

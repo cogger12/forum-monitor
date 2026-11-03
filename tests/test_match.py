@@ -1,6 +1,11 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from nes_monitor.match import evaluate, should_fetch_body, skip_prefix
+from nes_monitor.notify import format_alert
+from nes_monitor.run import activity_action
+from nes_monitor.store import Seen, Store
 
 
 class MatchTests(unittest.TestCase):
@@ -74,6 +79,69 @@ class MatchTests(unittest.TestCase):
         self.assertTrue(should_fetch_body("3 pistols for sale"))
         self.assertFalse(should_fetch_body("Glock 30 Gen 4"))
         self.assertFalse(should_fetch_body("Cz p10c"))
+
+    def test_bump_alert_names_the_new_activity(self):
+        item = Seen(
+            thread_id=515143,
+            title="Wilson Combat 1911 Custom Tactical Elite Black Edition 45 ACP",
+            url="https://www.northeastshooters.com/xen/threads/wilson.515143/",
+            prefix="WTS",
+            author="seller",
+            posted_at="2026-08-25T15:43:49-0400",
+            snippet="Used 45 ACP.",
+            reason="45 acp",
+            matched=True,
+            notified=False,
+            last_activity="2026-11-03T14:47:27-0500",
+        )
+        text = format_alert(item)
+        self.assertIn("Bumped WTS:", text)
+        self.assertIn("Bumped: Nov 03, 2026, 2:47 PM", text)
+
+    def test_activity_action(self):
+        stored = Seen(
+            thread_id=1,
+            title="Glock 21",
+            url="https://example.test/1",
+            prefix="WTS",
+            author="a",
+            posted_at="2026-08-01T12:00:00-0400",
+            snippet="",
+            reason="glock 21",
+            matched=True,
+            notified=True,
+            last_activity="2026-11-01T12:00:00-0400",
+        )
+        self.assertEqual(activity_action(None, "2026-11-03T14:47:27-0500", seeding=True), "remember")
+        self.assertEqual(activity_action(None, "2026-11-03T14:47:27-0500", seeding=False), "alert")
+        self.assertEqual(activity_action(stored, "2026-11-03T14:47:27-0500", seeding=False), "alert")
+        self.assertEqual(activity_action(stored, "2026-11-01T12:00:00-0400", seeding=False), "skip")
+        older = Seen(**{**stored.__dict__, "last_activity": ""})
+        self.assertEqual(activity_action(older, "2026-11-03T14:47:27-0500", seeding=False), "remember")
+
+    def test_store_keeps_last_activity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "state.sqlite")
+            store.save(
+                Seen(
+                    thread_id=515143,
+                    title="Wilson",
+                    url="https://example.test/515143",
+                    prefix="WTS",
+                    author="seller",
+                    posted_at="2026-08-25T15:43:49-0400",
+                    snippet="",
+                    reason="45 acp",
+                    matched=True,
+                    notified=True,
+                    last_activity="2026-11-03T14:47:27-0500",
+                )
+            )
+            found = store.get(515143)
+            store.close()
+        self.assertIsNotNone(found)
+        assert found is not None
+        self.assertEqual(found.last_activity, "2026-11-03T14:47:27-0500")
 
     def test_sold_and_wtb_are_skipped(self):
         self.assertTrue(skip_prefix("SOLD", "Tisas 1911A1 45 ACP"))

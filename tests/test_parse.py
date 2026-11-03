@@ -1,6 +1,6 @@
 import unittest
 
-from nes_monitor.parse import first_post_text, page_url, parse_listings, parse_rss_bodies
+from nes_monitor.parse import activity_url, first_post_text, is_newer, page_url, parse_listings, parse_rss_bodies
 
 FORUM = "https://www.northeastshooters.com/xen/forums/wts-wtt-handguns.213/"
 
@@ -14,6 +14,7 @@ PAGE = """
   </div>
   <a href="/xen/members/medic12.1799/" class="username " dir="auto">medic12</a>
   <time class="u-dt" datetime="2026-11-01T22:24:18-0500"></time>
+  <time class="structItem-latestDate u-dt" datetime="2026-11-03T14:47:27-0500"></time>
 </div>
 <div class="structItem js-threadListItem-519575">
   <div class="structItem-title">
@@ -51,6 +52,16 @@ class ParseTests(unittest.TestCase):
     def test_page_url_sorts_by_start_date(self):
         self.assertIn("order=post_date", page_url(FORUM, 1))
         self.assertIn("/page-2/", page_url(FORUM, 2))
+        self.assertNotIn("order=", activity_url(FORUM, 1))
+
+    def test_bump_time_is_separate_from_post_time(self):
+        first = parse_listings(PAGE, FORUM)[0]
+        self.assertEqual(first.posted_at, "2026-11-01T22:24:18-0500")
+        self.assertEqual(first.bumped_at, "2026-11-03T14:47:27-0500")
+        self.assertTrue(is_newer(first.bumped_at, first.posted_at))
+        self.assertFalse(is_newer(first.posted_at, first.bumped_at))
+        second = parse_listings(PAGE, FORUM)[1]
+        self.assertEqual(second.bumped_at, second.posted_at)
 
     def test_listings(self):
         listings = parse_listings(PAGE, FORUM)

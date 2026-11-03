@@ -9,13 +9,22 @@ from datetime import datetime
 from email.message import EmailMessage
 
 from nes_monitor.config import Config
+from nes_monitor.parse import is_newer
 from nes_monitor.store import Seen
 
 log = logging.getLogger(__name__)
 
 
+def is_bump(item: Seen) -> bool:
+    return bool(item.last_activity and item.posted_at and is_newer(item.last_activity, item.posted_at))
+
+
 def format_alert(item: Seen) -> str:
-    heading = f"{item.prefix}: {item.title}".strip()
+    bump = is_bump(item)
+    if bump:
+        heading = f"Bumped {item.prefix}: {item.title}".strip()
+    else:
+        heading = f"{item.prefix}: {item.title}".strip()
     if heading.startswith(": "):
         heading = heading[2:]
     lines = [heading]
@@ -24,6 +33,9 @@ def format_alert(item: Seen) -> str:
     posted = _format_posted(item.posted_at)
     if posted:
         lines.append(f"Posted: {posted}")
+    bumped = _format_posted(item.last_activity) if bump else ""
+    if bumped:
+        lines.append(f"Bumped: {bumped}")
     if item.reason:
         lines.append(f"Matched: {item.reason}")
     if item.snippet:
@@ -34,7 +46,7 @@ def format_alert(item: Seen) -> str:
 
 def send(config: Config, item: Seen) -> bool:
     message = format_alert(item)
-    subject = f"NES .45: {item.title}"
+    subject = f"NES .45 bumped: {item.title}" if is_bump(item) else f"NES .45: {item.title}"
     ok = True
     if config.ntfy_url:
         ok = _ntfy(config.ntfy_url, config.ntfy_token, subject, message, item.url) and ok
@@ -51,6 +63,7 @@ def send(config: Config, item: Seen) -> bool:
 def _ntfy(url: str, token: str, title: str, message: str, link: str) -> bool:
     endpoint = url if url.startswith("http") else f"https://ntfy.sh/{url}"
     headers = {
+        "User-Agent": "nes-45-monitor/1.0",
         "Title": title,
         "Click": link,
         "Content-Type": "text/plain; charset=utf-8",

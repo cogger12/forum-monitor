@@ -10,7 +10,15 @@ from nes_monitor.config import load_config
 from nes_monitor.http import FetchError, fetch
 from nes_monitor.match import evaluate, should_fetch_body, skip_prefix, snippet
 from nes_monitor.notify import format_alert, send
-from nes_monitor.parse import first_post_text, page_url, parse_listings, parse_rss_bodies, rss_url
+from nes_monitor.parse import (
+    activity_url,
+    first_post_text,
+    is_newer,
+    page_url,
+    parse_listings,
+    parse_rss_bodies,
+    rss_url,
+)
 from nes_monitor.store import Seen, Store
 
 log = logging.getLogger("nes-45-monitor")
@@ -95,6 +103,25 @@ def _dry_run(forum_url: str) -> int:
         print(format_alert(item))
         print("---")
     log.info("%s current .45 listings on the first page (sold/wtb skipped)", matches)
+    bumps = 0
+    try:
+        active = parse_listings(fetch(activity_url(forum_url, 1)), forum_url)
+    except FetchError as exc:
+        log.warning("Activity page unavailable: %s", exc)
+        active = []
+    for listing in active:
+        if skip_prefix(listing.prefix, listing.title) or not is_newer(listing.bumped_at, listing.posted_at):
+            continue
+        body, failed = _body(listing, bodies)
+        if failed:
+            continue
+        matched, reason = evaluate(listing.title, body)
+        if not matched:
+            continue
+        bumps += 1
+        print(format_alert(_seen(listing, body, reason, matched=True, notified=False)))
+        print("---")
+    log.info("%s bumped .45 listings on the recent-activity page", bumps)
     return 0
 
 
@@ -140,9 +167,11 @@ def _poll(config, store: Store, *, notify_existing: bool) -> None:
         else:
             log.error("Alert failed and will be retried: %s", listing.title)
 
+    _note_activity(config, store, bodies, seeding=seeding)
+
     if seeding:
         log.info(
-            "Seeded %s threads, including %s .45 listings already up. Only newer listings will alert.",
+            "Seeded %s threads, including %s .45 listings already up. Newer listings and later bumps will alert.",
             len(fresh),
             matched_now,
         )
@@ -176,6 +205,72 @@ def _load(forum_url: str, pages: int, store: Store | None = None):
     return listings, bodies
 
 
+def activity_action(stored: Seen | None, bumped_at: str, *, seeding: bool) -> str:
+    """What to do with one thread on the recent-activity page."""
+    if stored is None:
+        return "remember" if seeding else "alert"
+    if not stored.last_activity:
+        return "remember"
+    if not is_newer(bumped_at, stored.last_activity):
+        return "skip"
+    return "alert"
+
+
+def _note_activity(config, store: Store, bodies: dict[int, str], *, seeding: bool) -> None:
+    try:
+        active = parse_listings(fetch(activity_url(config.forum_url, 1)), config.forum_url)
+    except FetchError as exc:
+        log.warning("Activity page unavailable, bumps will wait for the next check: %s", exc)
+        return
+    bumped = 0
+    for listing in active:
+        stored = store.get(listing.thread_id)
+        action = "remember" if skip_prefix(listing.prefix, listing.title) else activity_action(
+            stored, listing.bumped_at, seeding=seeding
+        )
+        if action == "skip":
+            continue
+        if action == "remember":
+            store.save(_remember(listing, stored, matched=False if skip_prefix(listing.prefix, listing.title) else None))
+            continue
+        body, failed = _body(listing, bodies)
+        if failed:
+            log.warning("Could not read %s; will try again next check", listing.url)
+            continue
+        matched, reason = evaluate(listing.title, body)
+        if not matched:
+            store.save(_remember(listing, stored, matched=False))
+            continue
+        item = _seen(listing, body, reason, matched=True, notified=False)
+        delivered = send(config, item)
+        store.save(Seen(**{**item.__dict__, "notified": delivered}))
+        bumped += 1
+        if delivered:
+            log.info("Alerted activity: %s", listing.title)
+        else:
+            log.error("Activity alert failed and will be retried: %s", listing.title)
+    if bumped:
+        log.info("Sent %s bump alerts", bumped)
+
+
+def _remember(listing, stored: Seen | None, matched: bool | None = None) -> Seen:
+    if matched is None:
+        matched = stored.matched if stored else False
+    return Seen(
+        thread_id=listing.thread_id,
+        title=listing.title,
+        url=listing.url,
+        prefix=listing.prefix,
+        author=listing.author or (stored.author if stored else ""),
+        posted_at=(stored.posted_at if stored and stored.posted_at else listing.posted_at),
+        snippet=stored.snippet if stored and matched else "",
+        reason=stored.reason if stored and matched else "",
+        matched=matched,
+        notified=True if stored is None or stored.notified else False,
+        last_activity=listing.bumped_at,
+    )
+
+
 def _body(listing, bodies: dict[int, str]) -> tuple[str, bool]:
     """Return the post text, and whether a needed fetch failed."""
     cached = bodies.get(listing.thread_id, "")
@@ -207,6 +302,7 @@ def _seen(listing, body: str, reason: str, *, matched: bool, notified: bool) -> 
         reason=reason,
         matched=matched,
         notified=notified,
+        last_activity=listing.bumped_at,
     )
 
 
